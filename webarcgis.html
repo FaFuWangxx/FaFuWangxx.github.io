@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="initial-scale=1, maximum-scale=1, user-scalable=no"
+    />
+    <title>ArcGIS JavaScript API - Simple Map</title>
+    <link
+      rel="stylesheet"
+      href="https://js.arcgis.com/4.26/esri/themes/light/main.css"
+    />
+    <script src="https://js.arcgis.com/4.26/"></script>
+    <style>
+        html,
+        body {
+        padding: 0;
+        margin: 0;
+        height: 100%;
+        width: 100%;
+        }
+
+        #map {
+        display: flex;
+        height: calc(100vh - 80px);
+        }
+
+        #mapViewDiv {
+        width: 100%;
+        flex-grow:8;
+        }
+
+        #header {
+        height: 50px;
+        width: 100%;
+        background-color: #222;
+        color: #ffff;
+        font-size: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        }
+
+        #basemap {
+        flex-grow: 8;
+        width:300px;
+        background-color: #eee;
+        overflow: scroll;
+        }
+          #optionsDiv {
+        background-color: white;
+        color: black;
+        padding: 6px;
+        max-width: 250px;
+      }
+
+
+      }
+    </style>
+
+    <script>
+      require([
+        "esri/Map",
+        "esri/views/MapView",
+        "esri/widgets/BasemapGallery",
+        "esri/layers/FeatureLayer",
+        "esri/widgets/Legend",
+        "esri/widgets/Expand",
+        "esri/widgets/ScaleBar",
+        "esri/widgets/Locate",
+        "esri/widgets/Search",
+        "esri/widgets/LayerList",
+        "esri/Graphic",
+        "esri/widgets/DistanceMeasurement2D",
+        "esri/widgets/AreaMeasurement2D"
+      ], function (
+        Map,
+        MapView,
+        BasemapGallery,
+        FeatureLayer,
+        Legend,
+        Expand,
+        ScaleBar,
+        Locate,
+        Search,
+        LayerList,
+        Graphic,
+        DistanceMeasurement2D,
+        AreaMeasurement2D
+      ) {
+        //添加地图
+        var flayer = new FeatureLayer({
+          url: "https://www.geosceneonline.cn/server/rest/services/Hosted/全国各省人口出生率/FeatureServer"
+        });
+        var map = new Map({
+          basemap: "topo-vector",
+          layers: [flayer]
+        });
+
+        var view = new MapView({
+          container: "mapViewDiv",
+          map: map,
+          popup: {
+            autoOpenEnabled: false,
+            dockEnabled: true,
+            dockOptions: {
+              buttonEnabled: false,
+              breakpoint: false,
+              position: "bottom-right"
+            }
+          }
+        });
+
+        //搜索框，并以Expand的形式展开
+        const searchWidget = new Search({
+          view: view
+        });
+        view.ui.add(
+          new Expand({
+            view: view,
+            content: searchWidget,
+            expanded: true
+          }),
+          "top-left"
+        );
+
+        //添加图例，并以Expand的形式展开
+        const legend = new Expand({
+          content: new Legend({
+            view: view,
+            layerInfos: [
+              {
+                layer: flayer,
+                title: "2000-2016年全国的出生率"
+              }
+            ]
+          }),
+          view: view,
+          expanded: true
+        });
+        view.ui.add(legend, "bottom-right");
+        // 添加列表图层，并以Expand的形式展开
+        layerList = new LayerList({
+          container: document.createElement("div"),
+          view: view
+        });
+        layerListExpand = new Expand({
+          expandIconClass: "esri-icon-layer-list",
+          view: view,
+          content: layerList
+        });
+        view.ui.add(layerListExpand, "top-left");
+        //添加比例尺
+        var scaleBar = new ScaleBar({
+          view: view,
+          style: "ruler",
+          unit: "dual"
+        });
+        view.ui.add(scaleBar, {
+          position: "bottom-left"
+        });
+        //添加定位
+        const locate = new Locate({
+          view: view,
+          useHeadingEnabled: false,
+          goToOverride: function (view, options) {
+            options.target.scale = 1500;
+            return view.goTo(options.target);
+          }
+        });
+        view.ui.add(locate, "top-left");
+
+        //底图库
+        let basemapGallery = new BasemapGallery({
+          view: view,
+          container: basemap
+        });
+
+        view.ui.add(basemapGallery, {
+          position: "central"
+        });
+
+        //查询应用
+        view.ui.add("optionsDiv", "top-right");
+
+        // additional query fields initially set to null for basic query
+        let distance = null;
+        let units = null;
+
+        //create graphic for mouse point click
+        const pointGraphic = new Graphic({
+          symbol: {
+            type: "simple-marker", // autocasts as new SimpleMarkerSymbol()
+            color: [0, 0, 139],
+            outline: {
+              color: [255, 255, 255],
+              width: 1.5
+            }
+          }
+        });
+
+        // Create graphic for distance buffer
+        const bufferGraphic = new Graphic({
+          symbol: {
+            type: "simple-fill",
+            // autocasts as new SimpleFillSymbol()
+            color: [173, 216, 230, 0.2],
+            outline: {
+              // autocasts as new SimpleLineSymbol()
+              color: [255, 255, 255],
+              width: 1
+            }
+          }
+        });
+        // when query type changes, set appropriate values
+        const queryOpts = document.getElementById("query-type");
+
+        queryOpts.addEventListener("change", () => {
+          switch (queryOpts.value) {
+            // values set for distance query
+            case "distance":
+              distance = 7;
+              units = "miles";
+              break;
+            default:
+              // Default set to basic query
+              distance = null;
+              units = null;
+          }
+        });
+        flayer.load().then(() => {
+          // Set the view extent to the data extent
+          view.extent = flayer.fullExtent;
+          flayer.popupTemplate = flayer.createPopupTemplate();
+        });
+
+        view.on("click", (event) => {
+          view.graphics.remove(pointGraphic);
+          if (view.graphics.includes(bufferGraphic)) {
+            view.graphics.remove(bufferGraphic);
+          }
+          queryFeatures(event);
+        });
+        function queryFeatures(screenPoint) {
+          const point = view.toMap(screenPoint);
+          flayer
+            .queryFeatures({
+              geometry: point,
+              // distance and units will be null if basic query selected
+              distance: distance,
+              units: units,
+              spatialRelationship: "intersects",
+              returnGeometry: false,
+              returnQueryGeometry: true,
+              outFields: ["*"]
+            })
+            .then((featureSet) => {
+              // set graphic location to mouse pointer and add to mapview
+              pointGraphic.geometry = point;
+              view.graphics.add(pointGraphic);
+              // open popup of query result
+              view.popup.open({
+                location: point,
+                features: featureSet.features,
+                featureMenuOpen: true
+              });
+              if (featureSet.queryGeometry) {
+                bufferGraphic.geometry = featureSet.queryGeometry;
+                view.graphics.add(bufferGraphic);
+              }
+            });
+        }
+        //测量
+        let activeWidget = null;
+        view.ui.add("topbar", "top-right");
+        document
+          .getElementById("distanceButton")
+          .addEventListener("click", function () {
+            setActiveWidget(null);
+            if (!this.classList.contains("active")) {
+              setActiveWidget("distance");
+            } else {
+              setActiveButton(null);
+            }
+          });
+
+        document
+          .getElementById("areaButton")
+          .addEventListener("click", function () {
+            setActiveWidget(null);
+            if (!this.classList.contains("active")) {
+              setActiveWidget("area");
+            } else {
+              setActiveButton(null);
+            }
+          });
+
+        function setActiveWidget(type) {
+          switch (type) {
+            case "distance":
+              activeWidget = new DistanceMeasurement2D({
+                view: view
+              });
+
+              // skip the initial 'new measurement' button
+              activeWidget.viewModel.start();
+
+              view.ui.add(activeWidget, "top-right");
+              setActiveButton(document.getElementById("distanceButton"));
+              break;
+            case "area":
+              activeWidget = new AreaMeasurement2D({
+                view: view
+              });
+
+              // skip the initial 'new measurement' button
+              activeWidget.viewModel.start();
+
+              view.ui.add(activeWidget, "top-right");
+              setActiveButton(document.getElementById("areaButton"));
+              break;
+            case null:
+              if (activeWidget) {
+                view.ui.remove(activeWidget);
+                activeWidget.destroy();
+                activeWidget = null;
+              }
+              break;
+          }
+        }
+
+        function setActiveButton(selectedButton) {
+          // focus the view to activate keyboard shortcuts for sketching
+          view.focus();
+          let elements = document.getElementsByClassName("active");
+          for (let i = 0; i < elements.length; i++) {
+            elements[i].classList.remove("active");
+          }
+          if (selectedButton) {
+            selectedButton.classList.add("active");
+          }
+        }
+      });
+    </script>
+  </head>
+  <body>
+    <div id="header">2000-2016年全国各省人口出生率</div>
+    <div id="map">
+      <div id="mapViewDiv"></div>
+      <div id="basemap"></div>
+    </div>
+    <div id="optionsDiv" class="esri-widget">
+      <p>
+        Select a query type and click a point on the map to view the results.
+      </p>
+      <select id="query-type" class="esri-widget">
+        <option value="basic">Basic Query</option>
+        <option value="distance">Query By Distance</option>
+      </select>
+      <div id="srDiv" class="esri-widget"></div>
+    </div>
+    <div id="topbar">
+      <button
+        class="action-button esri-icon-measure-line"
+        id="distanceButton"
+        type="button"
+        title="Measure distance between two or more points"
+      ></button>
+      <button
+        class="action-button esri-icon-measure-area"
+        id="areaButton"
+        type="button"
+        title="Measure area"
+      ></button>
+    </div>
+  </body>
+</html>
